@@ -40,7 +40,23 @@ Prometheus и node exporter не обязательны.
 Банов нет, только блокировка и алерт. Банить по IP ненадёжно: за nginx/Reality
 в логе `127.0.0.1`, у мобильных операторов один IP на тысячи абонентов.
 
+## Требования
+
+- Панель: официальная PasarGuard, логин и пароль админа.
+- Машина, с которой ставится слой 1: Python 3.8+ и доступ к адресу панели (подойдёт сама панель).
+- Каждая нода: официальная `pg-node`, доступ root, Debian/Ubuntu, `python3` и `iptables`
+  (на Debian/Ubuntu обычно уже стоят), `git` или возможность скопировать папку через `scp`.
+- Для алертов в Telegram: бот и chat id.
+  - Токен — у [@BotFather](https://t.me/BotFather), команда `/newbot`.
+  - Chat id — напишите боту любое сообщение и откройте
+    `https://api.telegram.org/bot<ТОКЕН>/getUpdates`, число в `"chat":{"id":...}`.
+    Для группы: добавьте бота в группу, id будет отрицательным.
+- Все ноды лучше ставить с именем установки по умолчанию (`pg-node`) или с одинаковым
+  `--name`: путь журнала Xray задаётся в core один на все его ноды (подробнее в шаге 1).
+
 ## Установка
+
+Порядок: сначала шаг 1 (один раз на панель), потом шаг 2 на каждой ноде.
 
 ```bash
 git clone https://github.com/Atli4nikK/pasarguard-torrent-guard.git
@@ -58,6 +74,8 @@ python3 panel/torrent_guard_core.py                    # план: что изм
 python3 panel/torrent_guard_core.py --core 1 --apply   # применить к core 1
 ```
 
+- Номер core и его ноды видны в первой строке плана: `core 1 main [de-1(connected), ...]`.
+  Применить ко всем сразу: `--all --apply`.
 - Перед записью исходный core сохраняется в `./torrent-guard-backups/` (права 0600:
   внутри приватные ключи Reality). Откат: `--restore torrent-guard-backups/core-1-....json`.
 - Правка routing применяется вживую. Включение sniffing и access-лога перезапускает Xray
@@ -71,12 +89,19 @@ python3 panel/torrent_guard_core.py --core 1 --apply   # применить к c
 
 ### 2. Слои 2 и 3: на каждой ноде (root)
 
+На ноде под root:
+
 ```bash
-scp -r node/ root@NODE:/root/torrent-guard/
-ssh root@NODE
-bash /root/torrent-guard/torrent-guard.sh install \
+git clone https://github.com/Atli4nikK/pasarguard-torrent-guard.git
+bash pasarguard-torrent-guard/node/torrent-guard.sh install \
      --tg-token 123456:ABC... --tg-chat 111222333     # без --tg-* — только метрики
 ```
+
+Без `git` на ноде — скопируйте папку со своей машины:
+`scp -r node/ root@NODE:/root/torrent-guard/`, затем `bash /root/torrent-guard/torrent-guard.sh install ...`.
+
+В конце `install` сам запускает проверку, все строки должны быть `PASS`.
+Xray и нода не перезапускаются, клиенты ничего не замечают.
 
 - Если ufw включён, правила встают блоком в `/etc/ufw/before.rules` (backup в
   `/root/torrent-guard-backups/`). Если ufw нет, создаётся своя цепочка `TORRENT_GUARD`
@@ -85,6 +110,15 @@ bash /root/torrent-guard/torrent-guard.sh install \
   (описание полей — `node/watch.env.example`).
 - Нода в РФ, где Telegram API недоступен: `--tg-api https://ваш-прокси-telegram-api`.
   Или не задавайте Telegram и забирайте метрики в свой Prometheus.
+
+### Новая нода
+
+- Нода подключена к core, к которому шаг 1 уже применён: **на панели ничего делать не надо**.
+  Панель сама отправит ноде конфиг с правилами. Выполните на ноде только шаг 2.
+- Нода на новом core: шаг 1 для этого core (`--core N --apply`), затем шаг 2 на ноде.
+- Если `check` на ноде пишет `WARN access-лог Xray`, папка данных ноды не совпадает с путём
+  в core (нода ставилась с другим `--name`). Переустановите ноду с тем же именем, что у
+  остальных, или вынесите её на отдельный core со своим `--access-log`.
 
 ### Проверка и удаление
 
