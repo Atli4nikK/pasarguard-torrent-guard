@@ -22,7 +22,7 @@
 #                   при ошибке ufw reload;
 #   ufw нет       → своя цепочка iptables TORRENT_GUARD, подключается первой в OUTPUT;
 #                   восстанавливается после перезагрузки unit-ом torrent-guard-firewall.
-# Только IPv4 (как и в production SpaceGuard). Чужие правила не трогаются.
+# Только IPv4. Чужие правила не трогаются.
 #
 # Требования: Debian/Ubuntu, root, python3 ≥ 3.8, iptables с модулями string/hashlimit/NFLOG
 # (есть в стандартном ядре). node exporter не обязателен.
@@ -39,8 +39,8 @@ CHAIN=TORRENT_GUARD
 PROM_DIR=/var/lib/prometheus/node-exporter
 PROM_FILE=$PROM_DIR/spaceguard_torrent.prom
 
-# Подписи в первых 300 байтах исходящего пакета. Совпадают с шагом torrent_guard в
-# scripts/ops/spaceguard-node.sh (проверяет tests/test_modules_torrent_guard.py).
+# Подписи в первых 300 байтах исходящего пакета. Ключ (sg-tg:<key>) по ним агент понимает,
+# что именно поймано (DHT, трекер, рукопожатие).
 TORRENT_SIGNATURES=("BitTorrent protocol" "announce_peer" "get_peers" "find_node" "info_hash=" "peer_id=")
 TORRENT_SIG_KEYS=(bt announce getpeers findnode infohash peerid)  # для LOG-префикса sg-tg:<key>
 NFLOG_GROUP=7  # = TORRENT_WATCH_NFLOG_GROUP агента

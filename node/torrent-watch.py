@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""SpaceGuard torrent watch — слой 2 защиты от торрентов (только наблюдение, без банов).
+"""torrent-watch — слой 2 защиты от торрентов (только наблюдение, без банов).
 
 Два источника срабатываний:
   xray — в access-логе Xray строка `[... -> TORRENT]` (Xray распознал рукопожатие BitTorrent);
@@ -26,15 +26,14 @@ PasarGuard node). Метрики (textfile node exporter):
   spaceguard_torrent_detail_last_seconds{node,user,kind,tracker,info_hash}  не определён); ≤ DETAILS_MAX рядов
 
 Куда идут алерты (можно оба способа сразу):
-  - Prometheus: метрики выше читает внешний алертер (у SpaceGuard — бот, app/watchers/torrent_alert.py);
+  - Prometheus: метрики выше читает ваш алертер (Alertmanager, свой бот);
   - Telegram напрямую с ноды: заданы TORRENT_WATCH_TG_TOKEN и TORRENT_WATCH_TG_CHAT — агент сам шлёт
     сообщение «пользователь X качает торрент», не чаще раза в TORRENT_WATCH_TG_COOLDOWN секунд на
     пользователя. С нод, где Telegram заблокирован, укажите прокси-зеркало в TORRENT_WATCH_TG_API.
 
 Имя ноды в метриках и алертах: TORRENT_WATCH_NODE, иначе имя каталога /var/lib/<node>.
 Лог агент сам обнуляет, дочитав до конца, когда он больше MAX_BYTES (Xray пишет с O_APPEND).
-Модуль: modules/torrent-guard (README.md — установка на любую ноду PasarGuard).
-У SpaceGuard ставится шагом `torrent_guard` (scripts/ops/spaceguard-node.sh), unit spaceguard-torrent-watch.
+Ставится скриптом node/torrent-guard.sh (unit torrent-guard-watch), подробности — README.md.
 Только stdlib, Python 3.8+.
 """
 from __future__ import annotations
@@ -61,7 +60,7 @@ INDEX_MAX = 300_000
 PENDING_TTL = 30         # дроп может прийти раньше, чем мы дочитали строку access-лога
 TAG = os.environ.get("TORRENT_WATCH_TAG", "TORRENT")
 KMSG_PREFIX = "sg-tg:"
-NFLOG_GROUP = int(os.environ.get("TORRENT_WATCH_NFLOG_GROUP", "7"))  # = --nflog-group в spaceguard-node.sh
+NFLOG_GROUP = int(os.environ.get("TORRENT_WATCH_NFLOG_GROUP", "7"))  # = NFLOG_GROUP в torrent-guard.sh
 NODE_NAME = os.environ.get("TORRENT_WATCH_NODE", "").strip()
 # Алерты в Telegram прямо с ноды (необязательно; пустой токен — выключено)
 TG_TOKEN = os.environ.get("TORRENT_WATCH_TG_TOKEN", "").strip()

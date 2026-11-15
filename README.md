@@ -42,6 +42,11 @@ Prometheus и node exporter не обязательны.
 
 ## Установка
 
+```bash
+git clone https://github.com/Atli4nikK/pasarguard-torrent-guard.git
+cd pasarguard-torrent-guard
+```
+
 ### 1. Слой 1: правила в core config (один раз, с любой машины с доступом к API панели)
 
 ```bash

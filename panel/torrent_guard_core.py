@@ -57,8 +57,7 @@ PUT_KEYS = ("name", "type", "config", "exclude_inbound_tags", "fallbacks_inbound
 BACKUP_DIR = Path(os.environ.get("TORRENT_GUARD_BACKUP_DIR", "torrent-guard-backups"))
 
 # ------------------------------------------------------------------ правила
-# Этот блок совпадает с app/services/xray_torrent_guard.py бота SpaceGuard — это проверяет
-# tests/test_modules_torrent_guard.py. Меняете правила — меняйте в обоих местах.
+# Чистые функции над dict core-конфига, без сети: их легко проверить на своём конфиге.
 
 TORRENT_TAG = "TORRENT"
 BLOCK_TAG = "BLOCK"
