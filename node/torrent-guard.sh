@@ -81,6 +81,9 @@ rules_for() { # rules_for CHAIN
   done
 }
 
+# access-лог Xray: каталог данных pg-node или /tmp внутри контейнера (как пишет модуль)
+find_access_log() { ls /var/lib/*/xray-access.log /proc/[0-9]*/root/tmp/xray-access.log 2>/dev/null | head -1; }
+
 live_drops() { iptables -S 2>/dev/null | grep -- '-m string' | grep -c -- '-j DROP' || true; }
 
 # ------------------------------------------------------------------ слой 3: ufw
@@ -221,7 +224,7 @@ EOF
   systemctl enable $WATCH_UNIT >/dev/null 2>&1
   systemctl restart $WATCH_UNIT
   echo "агент: $(systemctl is-active $WATCH_UNIT), настройки $ENV_FILE"
-  ls /var/lib/*/xray-access.log >/dev/null 2>&1 \
+  [[ -n "$(find_access_log)" ]] \
     || echo "  access-лога Xray пока нет — примените слой 1 (panel/torrent_guard_core.py --apply)"
 }
 
@@ -248,7 +251,8 @@ run_check() {
     || fail "файрвол (слой 3)" "правил DROP: $n — запустите install"
   systemctl is-active --quiet $WATCH_UNIT && pass "агент (слой 2)" \
     || fail "агент (слой 2)" "$WATCH_UNIT не запущен"
-  ls /var/lib/*/xray-access.log >/dev/null 2>&1 && pass "access-лог Xray" "$(ls /var/lib/*/xray-access.log | head -1)" \
+  local al; al=$(find_access_log)
+  [[ -n "$al" ]] && pass "access-лог Xray" "$al" \
     || warn "access-лог Xray" "нет — слой 1 не применён к core этой ноды"
   grep -q '^spaceguard_torrent_watch_up{.*} 1$' "$PROM_FILE" 2>/dev/null && pass "агент читает лог" \
     || warn "агент читает лог" "spaceguard_torrent_watch_up != 1"

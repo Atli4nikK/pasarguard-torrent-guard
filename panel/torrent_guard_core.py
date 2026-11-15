@@ -12,7 +12,10 @@
      чтобы агент на ноде (node/torrent-watch.py) видел срабатывания в access-логе.
   3. На клиентских inbound включает sniffing (routeOnly: true): без него Xray не узнаёт
      BitTorrent. routeOnly меняет только маршрутизацию, адрес соединения прежний.
-  4. Включает access-лог Xray в файл для агента слоя 2 (--access-log none — не включать).
+  4. Включает access-лог Xray в файл /tmp/xray-access.log внутри контейнера ноды — для агента
+     слоя 2 (--access-log none — не включать). /tmp есть в контейнере pg-node всегда, при любом
+     --name установки. Путь к несуществующему каталогу ломает ноду: Xray не стартует
+     («failed to initialize access logger»). Журнал обнуляет агент — ставьте его на все ноды core.
 
 Схема:
     этот скрипт --(API PasarGuard: GET/PUT /api/core/{id})--> панель --> Xray на нодах
@@ -49,10 +52,11 @@ import urllib.parse
 import urllib.request
 from pathlib import Path
 
-# Путь access-лога ВНУТРИ контейнера ноды. Официальный установщик pg-node монтирует
-# /var/lib/<имя установки> (по умолчанию pg-node) под тем же путём, поэтому файл виден и на хосте.
+# Путь access-лога ВНУТРИ контейнера ноды. Один на все ноды core, поэтому каталог должен быть у
+# каждой: /tmp есть в образе pasarguard/node (Alpine) всегда. Каталог данных /var/lib/<имя> зависит
+# от --name установки pg-node и у разных нод разный — туда только вручную, через {node}.
 # {node} заменяется именем ноды PasarGuard, если у core ровно одна активная нода.
-DEFAULT_ACCESS_LOG = "/var/lib/pg-node/xray-access.log"
+DEFAULT_ACCESS_LOG = "/tmp/xray-access.log"
 PUT_KEYS = ("name", "type", "config", "exclude_inbound_tags", "fallbacks_inbound_tags")
 BACKUP_DIR = Path(os.environ.get("TORRENT_GUARD_BACKUP_DIR", "torrent-guard-backups"))
 
@@ -289,6 +293,9 @@ def main(argv=None) -> int:
         pending += 1
         mode = "рестарт Xray" if needs_restart(core["config"], new_cfg) else "вживую, без рестарта"
         print(f"core {cid} {core.get('name')} [{nodes}]: {mode}")
+        if any(c.startswith("log.access") for c in changes):
+            changes = changes + ["! поставьте агент (node/torrent-guard.sh install) на все ноды этого core: "
+                                 "он обнуляет журнал, без него файл растёт"]
         for line in changes + ([warning] if warning else []):
             print(f"   {line}")
         if args.apply:
