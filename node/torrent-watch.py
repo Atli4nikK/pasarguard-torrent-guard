@@ -15,8 +15,11 @@ NFLOG отдаёт начало пакета, из него берём тип и
   kind=peer    рукопожатие BitTorrent (скачивание) — info_hash из рукопожатия.
 info_hash идентифицирует торрент (magnet:?xt=urn:btih:<hash>).
 
-Access-лог: core пишет его в /var/lib/<node>/xray-access.log (каталог смонтирован в контейнер
-PasarGuard node). Метрики (textfile node exporter):
+Access-лог Xray ищется по шаблонам TORRENT_WATCH_GLOB (через пробел, первый найденный):
+  /var/lib/*/xray-access.log       — каталог данных pg-node, смонтированный с хоста;
+  /proc/*/root/tmp/xray-access.log — /tmp внутри контейнера ноды (так пишет модуль по умолчанию:
+                                     /tmp есть в контейнере при любом --name установки pg-node).
+Метрики (textfile node exporter):
 
   spaceguard_torrent_events_total{node,user,inbound,ip,via}        счётчик срабатываний
   spaceguard_torrent_last_event_seconds{node,user,inbound,ip,via}  unix-время последнего
@@ -31,7 +34,7 @@ PasarGuard node). Метрики (textfile node exporter):
     сообщение «пользователь X качает торрент», не чаще раза в TORRENT_WATCH_TG_COOLDOWN секунд на
     пользователя. С нод, где Telegram заблокирован, укажите прокси-зеркало в TORRENT_WATCH_TG_API.
 
-Имя ноды в метриках и алертах: TORRENT_WATCH_NODE, иначе имя каталога /var/lib/<node>.
+Имя ноды в метриках и алертах: TORRENT_WATCH_NODE, иначе имя каталога /var/lib/<node> или hostname.
 Лог агент сам обнуляет, дочитав до конца, когда он больше MAX_BYTES (Xray пишет с O_APPEND).
 Ставится скриптом node/torrent-guard.sh (unit torrent-guard-watch), подробности — README.md.
 Только stdlib, Python 3.8+.
@@ -49,7 +52,9 @@ import urllib.request
 from collections import OrderedDict
 from urllib.parse import unquote_to_bytes
 
-LOG_GLOB = os.environ.get("TORRENT_WATCH_GLOB", "/var/lib/*/xray-access.log")
+LOG_GLOB = os.environ.get("TORRENT_WATCH_GLOB",
+                          "/var/lib/*/xray-access.log /proc/*/root/tmp/xray-access.log")
+FIND_EVERY = 10          # как часто искать access-лог, пока он не найден
 OUT = os.environ.get("TORRENT_WATCH_OUT", "/var/lib/prometheus/node-exporter/spaceguard_torrent.prom")
 KMSG = os.environ.get("TORRENT_WATCH_KMSG", "/dev/kmsg")
 MAX_BYTES = int(os.environ.get("TORRENT_WATCH_MAX_BYTES", str(32 * 1024 * 1024)))
@@ -80,6 +85,23 @@ ACCEPT_RE = re.compile(
     r"\[(\S+) (?:->|>>) (\S+)\](?: email: (\S+))?"
 )
 KMSG_RE = re.compile(r"sg-tg:(\S+) .*?DST=(\S+) .*?PROTO=(TCP|UDP)(?: .*?DPT=(\d+))?")
+
+
+def find_log(patterns: str = LOG_GLOB):
+    """Путь к access-логу Xray по первому сработавшему шаблону, иначе None."""
+    for pattern in patterns.split():
+        paths = sorted(glob.glob(pattern))
+        if paths:
+            return paths[0]
+    return None
+
+
+def node_name_for(path: str) -> str:
+    """Имя ноды для метрик: TORRENT_WATCH_NODE, иначе каталог /var/lib/<node>, иначе hostname."""
+    if NODE_NAME:
+        return NODE_NAME
+    parent = os.path.basename(os.path.dirname(path))
+    return socket.gethostname() if parent == "tmp" else parent
 
 
 def parse_accept(line: str):
@@ -485,20 +507,25 @@ def main() -> None:
     node = NODE_NAME or "unknown"
     notifier = Notifier() if TG_TOKEN and TG_CHAT else None
     last_flush = 0.0
+    last_find = 0.0
     while True:
         now = time.time()
-        if follower is None:
-            paths = sorted(glob.glob(LOG_GLOB))
-            if paths:
-                follower = Follower(paths[0])
-                node = NODE_NAME or os.path.basename(os.path.dirname(paths[0]))
+        if follower is None and now - last_find >= FIND_EVERY:
+            last_find = now
+            path = find_log()
+            if path:
+                try:
+                    follower = Follower(path)
+                    node = node_name_for(path)
+                except OSError:  # процесс Xray как раз перезапускается
+                    follower = None
         if follower is not None:
             try:
                 for raw in follower.read_lines():
                     if b" accepted " in raw:
                         w.access_line(raw.decode("utf-8", "replace"), now)
                 follower.maybe_truncate()
-            except FileNotFoundError:
+            except OSError:  # файл удалён или Xray перезапущен (путь /proc/<pid>/... исчез)
                 follower = None
         if kmsg is not None:
             for rec in kmsg.records():
